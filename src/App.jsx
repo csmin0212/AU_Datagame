@@ -28,12 +28,19 @@ export default function App() {
     updatePity,
     updateDeck,
     levelUpCharacter,
+    equipItem,
+    clearStage,
   } = useGameState()
 
   function handlePull(bannerId, results, cost, newPityCount, newGuarantee) {
     spendCurrency('gacha', cost)
     results.forEach(char => acquireCharacter(char.id))
     updatePity(bannerId, newPityCount, newGuarantee)
+  }
+
+  function handleStartBattle(stage) {
+    // TODO: 전투 시스템 구현 예정
+    alert(`[${stage.title}] 전투 시작!\n권장 전투력: ${stage.recommendedPower.toLocaleString()}\n(전투 시스템 준비 중)`)
   }
 
   function handleReset() {
@@ -44,20 +51,27 @@ export default function App() {
   function renderPage() {
     switch (page) {
       case 'home':
-        return <HomePage onNavigate={setPage} />
+        return (
+          <HomePage
+            onNavigate={setPage}
+            ownedCount={Object.keys(state.ownedCharacters).length}
+            partyCount={state.deck.length}
+          />
+        )
       case 'characters':
         return (
           <CharactersPage
             ownedCharacters={state.ownedCharacters}
             onLevelUp={levelUpCharacter}
             growthCurrency={state.currency.growth}
+            onEquip={equipItem}
           />
         )
       case 'quest':
         return (
           <QuestPage
             clearedStages={state.clearedStages || {}}
-            onSelectStage={() => {}}
+            onStartBattle={handleStartBattle}
           />
         )
       case 'party':
@@ -90,8 +104,8 @@ export default function App() {
       {/* 탑바 */}
       <TopBar
         currency={state.currency}
-        playerLevel={1}
-        playerName="사령관"
+        playerLevel={state.player?.level ?? 1}
+        playerName={state.player?.name ?? '사령관'}
         onOpenPopup={setPopup}
       />
 
