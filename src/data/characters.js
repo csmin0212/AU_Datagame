@@ -19,6 +19,15 @@ export function getStatAtLevel(baseStat, level) {
   return Math.floor(baseStat * (1 + (level - 1) * 0.05))
 }
 
+// ===== 캐릭터 이미지 경로 헬퍼 =====
+// portrait : 1:1 카드용   → /characters/{id}_portrait.png
+// fullbody : 상세 전신용  → /characters/{id}_fullbody.png
+// 파일이 없으면 fallback으로 image 경로 사용
+export function getCharacterImage(char, type = 'portrait') {
+  if (type === 'fullbody') return char.fullbody  || char.image
+  return char.portrait || char.image
+}
+
 // ===== 빈 장비 슬롯 기본값 =====
 export const EMPTY_EQUIPMENT = {
   weapon:     null,
