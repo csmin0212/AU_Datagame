@@ -4,6 +4,9 @@ import {
   ROLE_LABEL, ROLE_COLOR, getStatAtLevel, getCharacterImage,
   EQUIPMENT_SLOT_LABEL, EQUIPMENT_SLOT_ICON,
 } from '../data/characters'
+import { ITEMS, ITEM_MAP, ITEM_RARITY, getItemsBySlot, calcEquipStats } from '../data/items'
+import { AWAKEN_COST, AWAKEN_MAX, AWAKEN_STAT_BONUS } from '../hooks/useGameState'
+import { playAudio } from '../utils/audio'
 
 const FILTERS = [
   { id: 'all',     label: '전체' },
@@ -107,18 +110,23 @@ function CharacterList({ ownedCharacters, onSelect }) {
 // ────────────────────────────────────────────────────
 // 캐릭터 상세 페이지 (블루 아카이브 스타일)
 // ────────────────────────────────────────────────────
-function CharacterDetail({ charId, ownedCharacters, onBack, onLevelUp, growthCurrency, onEquip }) {
-  const [tab, setTab] = useState('info') // 'info' | 'skills' | 'equip'
+function CharacterDetail({ charId, ownedCharacters, onBack, onLevelUp, growthCurrency, onEquip, onAwaken, inventory }) {
+  const [tab,         setTab]         = useState('info') // 'info' | 'skills' | 'equip' | 'awaken'
+  const [equipSlot,   setEquipSlot]   = useState(null)   // 장비 슬롯 선택 상태
 
   const char  = CHARACTER_POOL.find(c => c.id === charId)
   const owned = ownedCharacters[charId]
 
   if (!char) return null
 
-  const level   = owned?.level ?? 1
-  const expPct  = owned ? Math.min(((owned.exp % EXP_PER_LEVEL) / EXP_PER_LEVEL) * 100, 100) : 0
-  const elemColor = ELEMENT_COLOR[char.element]
-  const roleColor = ROLE_COLOR[char.role]
+  const level      = owned?.level ?? 1
+  const expPct     = owned ? Math.min(((owned.exp % EXP_PER_LEVEL) / EXP_PER_LEVEL) * 100, 100) : 0
+  const elemColor  = ELEMENT_COLOR[char.element]
+  const roleColor  = ROLE_COLOR[char.role]
+  const awakenTier = owned?.awakening ?? 0
+  const awakenCost = AWAKEN_COST[char.rarity] ?? 1
+  const canAwaken  = owned && awakenTier < AWAKEN_MAX && (owned.copies - 1) >= awakenCost
+  const equipBonus = calcEquipStats(owned?.equipment)
 
   return (
     <div className="relative w-full h-full overflow-hidden" style={{ background: 'var(--bg)' }}>
@@ -218,7 +226,7 @@ function CharacterDetail({ charId, ownedCharacters, onBack, onLevelUp, growthCur
 
           {/* 탭 바 */}
           <div className="flex shrink-0 mb-4 gap-1">
-            {[['info','기본 정보'], ['skills','스킬'], ['equip','장비']].map(([id, label]) => (
+            {[['info','기본 정보'], ['skills','스킬'], ['equip','장비'], ['awaken','각성']].map(([id, label]) => (
               <button
                 key={id}
                 onClick={() => setTab(id)}
@@ -239,24 +247,44 @@ function CharacterDetail({ charId, ownedCharacters, onBack, onLevelUp, growthCur
               <>
                 {/* 스탯 카드 */}
                 <div className="game-card p-4">
-                  <div className="text-xs font-bold mb-3" style={{ color: 'var(--text-muted)' }}>기본 능력치</div>
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="text-xs font-bold" style={{ color: 'var(--text-muted)' }}>기본 능력치</div>
+                    {awakenTier > 0 && (
+                      <div className="text-xs px-2 py-0.5 rounded-full font-bold"
+                        style={{ background: 'rgba(245,197,24,0.2)', color: 'var(--gold)' }}>
+                        {awakenTier}각 (+{(awakenTier * AWAKEN_STAT_BONUS * 100).toFixed(0)}%)
+                      </div>
+                    )}
+                  </div>
                   <div className="grid grid-cols-2 gap-x-6 gap-y-3">
                     {[
                       ['최대 체력', 'hp',    '#6BCB77'],
                       ['공격력',   'atk',   '#FF6B6B'],
                       ['방어력',   'def',   '#4FC3F7'],
                       ['속도',     'speed', '#FFD93D'],
-                    ].map(([label, key, color]) => (
-                      <div key={key} className="flex items-center justify-between">
-                        <span className="text-sm" style={{ color: 'var(--text-muted)' }}>{label}</span>
-                        <span className="font-bold text-lg" style={{ color }}>
-                          {key === 'speed'
-                            ? char.baseStats.speed.toFixed(1)
-                            : getStatAtLevel(char.baseStats[key], owned?.level ?? 1).toLocaleString()
-                          }
-                        </span>
-                      </div>
-                    ))}
+                    ].map(([label, key, color]) => {
+                      const base        = key === 'speed' ? char.baseStats.speed : getStatAtLevel(char.baseStats[key], level)
+                      const awakBonus   = key !== 'speed' ? Math.round(base * awakenTier * AWAKEN_STAT_BONUS) : 0
+                      const eqBonus     = equipBonus[key] ?? 0
+                      const total       = key === 'speed' ? base : base + awakBonus + eqBonus
+                      return (
+                        <div key={key} className="flex items-center justify-between">
+                          <span className="text-sm" style={{ color: 'var(--text-muted)' }}>{label}</span>
+                          <div className="text-right">
+                            <span className="font-bold text-lg" style={{ color }}>
+                              {key === 'speed' ? total.toFixed(1) : total.toLocaleString()}
+                            </span>
+                            {(awakBonus > 0 || eqBonus > 0) && (
+                              <div style={{ fontSize: 10, color: 'var(--text-dim)' }}>
+                                {base.toLocaleString()}
+                                {awakBonus > 0 && <span style={{ color: 'var(--gold)' }}> +{awakBonus}</span>}
+                                {eqBonus > 0   && <span style={{ color: '#6BCB77' }}> +{eqBonus}</span>}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })}
                   </div>
                 </div>
 
@@ -386,44 +414,216 @@ function CharacterDetail({ charId, ownedCharacters, onBack, onLevelUp, growthCur
 
             {/* ── 장비 탭 ── */}
             {tab === 'equip' && (
-              <>
-                <div className="game-card p-4">
-                  <div className="text-xs font-bold mb-3" style={{ color: 'var(--text-muted)' }}>장비 슬롯</div>
-                  {!owned && (
-                    <p className="text-sm mb-3" style={{ color: 'var(--text-dim)' }}>캐릭터를 보유해야 장비를 장착할 수 있습니다.</p>
-                  )}
-                  <div className="grid grid-cols-3 gap-3">
-                    {Object.entries(EQUIPMENT_SLOT_LABEL).map(([slot, label]) => {
-                      const equipped = owned?.equipment?.[slot]
-                      return (
-                        <div
-                          key={slot}
-                          className="flex flex-col items-center gap-2 rounded-2xl p-3 transition-all"
-                          style={{
-                            background: equipped ? 'rgba(245,197,24,0.1)' : 'rgba(255,255,255,0.04)',
-                            border: `1px solid ${equipped ? 'rgba(245,197,24,0.4)' : 'var(--border)'}`,
-                            cursor: owned ? 'pointer' : 'default',
-                            minHeight: 90,
-                          }}
-                        >
-                          <div className="text-2xl">{EQUIPMENT_SLOT_ICON[slot]}</div>
-                          <div className="text-xs text-center font-semibold"
-                            style={{ color: equipped ? 'var(--gold)' : 'var(--text-dim)' }}>
-                            {equipped ?? label}
+              <div className="flex flex-col gap-3">
+                {!owned && (
+                  <div className="game-card p-4 text-center">
+                    <div className="text-2xl mb-2">🔒</div>
+                    <p className="text-sm" style={{ color: 'var(--text-dim)' }}>캐릭터를 보유해야 장비를 장착할 수 있습니다.</p>
+                  </div>
+                )}
+                {owned && (
+                  <>
+                    <div className="game-card p-4">
+                      <div className="text-xs font-bold mb-3" style={{ color: 'var(--text-muted)' }}>장비 슬롯 — 슬롯을 클릭하여 아이템 장착</div>
+                      <div className="grid grid-cols-3 gap-3">
+                        {Object.entries(EQUIPMENT_SLOT_LABEL).map(([slot, label]) => {
+                          const equippedId = owned?.equipment?.[slot]
+                          const equippedItem = equippedId ? ITEM_MAP[equippedId] : null
+                          const isSelected = equipSlot === slot
+                          return (
+                            <button
+                              key={slot}
+                              onClick={() => setEquipSlot(isSelected ? null : slot)}
+                              className="flex flex-col items-center gap-2 rounded-2xl p-3 transition-all hover:brightness-110"
+                              style={{
+                                background: isSelected ? 'rgba(74,144,217,0.2)' : equippedItem ? 'rgba(245,197,24,0.1)' : 'rgba(255,255,255,0.04)',
+                                border: `1px solid ${isSelected ? 'var(--blue)' : equippedItem ? 'rgba(245,197,24,0.4)' : 'var(--border)'}`,
+                                minHeight: 90,
+                              }}
+                            >
+                              <div className="text-2xl">{EQUIPMENT_SLOT_ICON[slot]}</div>
+                              <div className="text-xs text-center font-semibold leading-tight"
+                                style={{ color: equippedItem ? 'var(--gold)' : 'var(--text-dim)' }}>
+                                {equippedItem ? equippedItem.name : label}
+                              </div>
+                              {equippedItem && (
+                                <div className="text-xs px-1.5 py-0.5 rounded-full"
+                                  style={{ background: 'rgba(245,197,24,0.2)', color: 'var(--gold)', fontSize: 9 }}>
+                                  {Object.entries(equippedItem.stats).map(([k, v]) => `${k === 'atk' ? 'ATK' : k === 'def' ? 'DEF' : 'HP'} +${v}`).join(' ')}
+                                </div>
+                              )}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
+
+                    {/* 아이템 선택 패널 */}
+                    {equipSlot && (
+                      <div className="game-card p-4">
+                        <div className="flex items-center justify-between mb-3">
+                          <div className="text-xs font-bold" style={{ color: 'var(--text-muted)' }}>
+                            {EQUIPMENT_SLOT_ICON[equipSlot]} {EQUIPMENT_SLOT_LABEL[equipSlot]} 장착 가능 아이템
                           </div>
-                          {equipped && (
-                            <div className="text-xs px-2 py-0.5 rounded-full"
-                              style={{ background: 'rgba(245,197,24,0.2)', color: 'var(--gold)' }}>장착 중</div>
+                          {owned?.equipment?.[equipSlot] && (
+                            <button
+                              onClick={() => { onEquip(charId, equipSlot, null); playAudio('equip') }}
+                              className="text-xs px-2 py-1 rounded-lg"
+                              style={{ background: 'rgba(239,68,68,0.2)', color: '#f87171' }}>
+                              해제
+                            </button>
                           )}
                         </div>
-                      )
-                    })}
+                        <div className="flex flex-col gap-2">
+                          {getItemsBySlot(equipSlot).filter(item => (inventory?.[item.id] ?? 0) > 0).length === 0 && (
+                            <p className="text-sm text-center py-3" style={{ color: 'var(--text-dim)' }}>
+                              보유 중인 {EQUIPMENT_SLOT_LABEL[equipSlot]} 아이템이 없습니다.
+                            </p>
+                          )}
+                          {getItemsBySlot(equipSlot)
+                            .filter(item => (inventory?.[item.id] ?? 0) > 0)
+                            .map(item => {
+                              const rarityInfo = ITEM_RARITY[item.rarity]
+                              const isEquipped = owned?.equipment?.[equipSlot] === item.id
+                              return (
+                                <button
+                                  key={item.id}
+                                  onClick={() => { onEquip(charId, equipSlot, item.id); playAudio('equip'); setEquipSlot(null) }}
+                                  className="flex items-center gap-3 p-3 rounded-xl text-left transition-all hover:brightness-110"
+                                  style={{
+                                    background: isEquipped ? 'rgba(245,197,24,0.15)' : 'rgba(255,255,255,0.04)',
+                                    border: `1px solid ${isEquipped ? 'rgba(245,197,24,0.4)' : 'var(--border)'}`,
+                                  }}>
+                                  <div className="text-2xl shrink-0">{item.icon}</div>
+                                  <div className="flex-1">
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-sm font-semibold text-white">{item.name}</span>
+                                      <span className="text-xs px-1.5 py-0.5 rounded font-bold"
+                                        style={{ background: rarityInfo.color + '25', color: rarityInfo.color }}>
+                                        {rarityInfo.label}
+                                      </span>
+                                    </div>
+                                    <div className="text-xs mt-0.5" style={{ color: 'var(--text-dim)' }}>
+                                      {Object.entries(item.stats).map(([k, v]) =>
+                                        `${k === 'atk' ? 'ATK' : k === 'def' ? 'DEF' : 'HP'} ${v > 0 ? '+' : ''}${v}`
+                                      ).join('  ')}
+                                    </div>
+                                  </div>
+                                  <div className="text-xs shrink-0" style={{ color: 'var(--text-dim)' }}>
+                                    ×{inventory?.[item.id] ?? 0}
+                                  </div>
+                                  {isEquipped && <span style={{ color: 'var(--gold)', fontSize: 16 }}>✓</span>}
+                                </button>
+                              )
+                            })}
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
+
+            {/* ── 각성 탭 ── */}
+            {tab === 'awaken' && (
+              <div className="flex flex-col gap-3">
+                {/* 각성 단계 표시 */}
+                <div className="game-card p-4">
+                  <div className="text-xs font-bold mb-3" style={{ color: 'var(--text-muted)' }}>각성 단계</div>
+                  <div className="flex justify-center gap-3 mb-4">
+                    {Array.from({ length: AWAKEN_MAX }).map((_, i) => (
+                      <div key={i} className="flex flex-col items-center gap-1">
+                        <div className="w-10 h-10 rounded-full flex items-center justify-center font-bold"
+                          style={{
+                            background: i < awakenTier
+                              ? `linear-gradient(135deg, var(--gold), #fbbf24)`
+                              : 'rgba(255,255,255,0.08)',
+                            border: i < awakenTier ? '2px solid var(--gold)' : '2px solid var(--border)',
+                            color: i < awakenTier ? '#1a0f3a' : 'var(--text-dim)',
+                            boxShadow: i < awakenTier ? '0 0 10px rgba(245,197,24,0.4)' : 'none',
+                          }}>
+                          {i < awakenTier ? '★' : i + 1}
+                        </div>
+                        <div style={{ fontSize: 9, color: i < awakenTier ? 'var(--gold)' : 'var(--text-dim)' }}>
+                          {i < awakenTier ? `+${((i + 1) * AWAKEN_STAT_BONUS * 100).toFixed(0)}%` : `${(i + 1)}각`}
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                  <p className="text-xs mt-3 text-center" style={{ color: 'var(--text-dim)' }}>
-                    아이템 시스템은 추후 업데이트 예정입니다
-                  </p>
+
+                  {owned && awakenTier < AWAKEN_MAX && (
+                    <div className="rounded-xl p-3 mb-3"
+                      style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)' }}>
+                      <div className="flex justify-between text-sm mb-1">
+                        <span style={{ color: 'var(--text-muted)' }}>다음 각성 ({awakenTier + 1}각)</span>
+                        <span style={{ color: canAwaken ? 'var(--gold)' : '#f87171' }}>
+                          중복 {awakenCost}개 필요
+                        </span>
+                      </div>
+                      <div className="flex justify-between text-sm">
+                        <span style={{ color: 'var(--text-dim)' }}>보유 중복</span>
+                        <span className="font-bold" style={{ color: (owned.copies - 1) >= awakenCost ? '#6BCB77' : '#f87171' }}>
+                          {Math.max(0, owned.copies - 1)}개
+                        </span>
+                      </div>
+                    </div>
+                  )}
+
+                  {owned && awakenTier >= AWAKEN_MAX && (
+                    <div className="text-center py-3">
+                      <div className="text-2xl mb-1">✨</div>
+                      <div className="text-white font-bold">최대 각성 달성!</div>
+                      <div className="text-xs mt-1" style={{ color: 'var(--gold)' }}>
+                        전 스탯 +{(AWAKEN_MAX * AWAKEN_STAT_BONUS * 100).toFixed(0)}% 적용 중
+                      </div>
+                    </div>
+                  )}
+
+                  {owned && awakenTier < AWAKEN_MAX && (
+                    <button
+                      onClick={() => { onAwaken(charId, char.rarity); playAudio('awaken') }}
+                      disabled={!canAwaken}
+                      className="w-full py-3 rounded-2xl text-base font-bold disabled:opacity-40"
+                      style={{
+                        background: canAwaken
+                          ? 'linear-gradient(135deg, var(--gold), #fbbf24)'
+                          : '#374151',
+                        color: canAwaken ? '#1a0f3a' : '#fff',
+                      }}>
+                      {canAwaken
+                        ? `${awakenTier + 1}각 각성 (중복 ${awakenCost}개 소모)`
+                        : `중복 ${awakenCost}개 부족 (현재 ${Math.max(0, (owned.copies - 1))}개)`}
+                    </button>
+                  )}
+
+                  {!owned && (
+                    <p className="text-sm text-center" style={{ color: 'var(--text-dim)' }}>
+                      캐릭터를 보유해야 각성할 수 있습니다.
+                    </p>
+                  )}
                 </div>
-              </>
+
+                {/* 각성 효과 설명 */}
+                <div className="game-card p-4">
+                  <div className="text-xs font-bold mb-3" style={{ color: 'var(--text-muted)' }}>각성 효과</div>
+                  <div className="flex flex-col gap-2">
+                    {Array.from({ length: AWAKEN_MAX }).map((_, i) => (
+                      <div key={i} className="flex items-center justify-between text-sm"
+                        style={{ opacity: i < awakenTier ? 1 : 0.5 }}>
+                        <span style={{ color: i < awakenTier ? 'var(--gold)' : 'var(--text-dim)' }}>
+                          {i < awakenTier ? '★' : '○'} {i + 1}각
+                        </span>
+                        <span style={{ color: i < awakenTier ? '#6BCB77' : 'var(--text-dim)' }}>
+                          전 스탯 +{((i + 1) * AWAKEN_STAT_BONUS * 100).toFixed(0)}%
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="text-xs mt-3" style={{ color: 'var(--text-dim)' }}>
+                    * 각성 효과는 누적 적용됩니다. 각성재료는 중복 획득한 동일 캐릭터입니다.
+                  </div>
+                </div>
+              </div>
             )}
 
           </div>
@@ -436,7 +636,7 @@ function CharacterDetail({ charId, ownedCharacters, onBack, onLevelUp, growthCur
 // ────────────────────────────────────────────────────
 // 메인 export (라우터 역할)
 // ────────────────────────────────────────────────────
-export default function CharactersPage({ ownedCharacters, onLevelUp, growthCurrency, onEquip }) {
+export default function CharactersPage({ ownedCharacters, onLevelUp, growthCurrency, onEquip, onAwaken, inventory }) {
   const [selected, setSelected] = useState(null)
 
   if (selected) {
@@ -448,6 +648,8 @@ export default function CharactersPage({ ownedCharacters, onLevelUp, growthCurre
         onLevelUp={onLevelUp}
         growthCurrency={growthCurrency}
         onEquip={onEquip}
+        onAwaken={onAwaken}
+        inventory={inventory}
       />
     )
   }

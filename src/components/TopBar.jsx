@@ -1,12 +1,16 @@
-export default function TopBar({ currency, playerLevel = 1, playerName = '플레이어', onOpenPopup }) {
-  const stamina = { current: 80, max: 120 }
+export default function TopBar({ currency, stamina, playerLevel = 1, playerName = '사령관', onOpenPopup }) {
+  const st = stamina ?? { current: 80, max: 120 }
+  const staminaPct = (st.current / st.max) * 100
+  // 회복까지 남은 시간 (분)
+  const STAMINA_RATE_MIN = 5
+  const nextIn = st.current < st.max ? STAMINA_RATE_MIN : 0
 
   return (
     <header
       className="flex items-center justify-between px-4 shrink-0 z-10"
       style={{ height: 'var(--topbar-h)', background: 'rgba(15,7,40,0.95)', borderBottom: '1px solid var(--border)' }}
     >
-      {/* 좌: 플레이어 정보 */}
+      {/* 좌: 플레이어 */}
       <button
         className="flex items-center gap-2 hover:opacity-80 transition-opacity"
         onClick={() => onOpenPopup('profile')}
@@ -23,16 +27,29 @@ export default function TopBar({ currency, playerLevel = 1, playerName = '플레
         </div>
       </button>
 
-      {/* 중앙: 재화 */}
+      {/* 중앙: 재화 + 스태미나 */}
       <div className="flex items-center gap-2">
         {/* 스태미나 */}
-        <div className="currency-pill">
-          <span className="text-base">⚡</span>
-          <span style={{ color: 'var(--gold)' }}>{stamina.current}/{stamina.max}</span>
-          <button
-            className="w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold ml-1 hover:opacity-80"
-            style={{ background: 'var(--gold)', color: '#1a0f3a' }}
-          >+</button>
+        <div className="currency-pill flex-col items-start gap-0.5" style={{ minWidth: 110 }}>
+          <div className="flex items-center gap-1.5 w-full">
+            <span className="text-base">⚡</span>
+            <span style={{ color: staminaPct < 30 ? '#f87171' : 'var(--gold)' }}>
+              {st.current}/{st.max}
+            </span>
+            {st.current < st.max && (
+              <span className="text-xs ml-auto" style={{ color: 'var(--text-dim)', fontSize: 10 }}>
+                +1/{nextIn}분
+              </span>
+            )}
+          </div>
+          {/* 스태미나 게이지 바 */}
+          <div className="w-full h-1.5 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.1)' }}>
+            <div className="h-1.5 rounded-full transition-all"
+              style={{
+                width: `${staminaPct}%`,
+                background: staminaPct > 60 ? '#6BCB77' : staminaPct > 30 ? '#FFD93D' : '#ef4444',
+              }} />
+          </div>
         </div>
 
         {/* 골드 */}
@@ -45,7 +62,7 @@ export default function TopBar({ currency, playerLevel = 1, playerName = '플레
           >+</button>
         </div>
 
-        {/* 뽑기 재화 */}
+        {/* 젬 */}
         <div className="currency-pill">
           <span className="text-base">💎</span>
           <span style={{ color: '#c084fc' }}>{currency.gacha.toLocaleString()}</span>
@@ -56,7 +73,7 @@ export default function TopBar({ currency, playerLevel = 1, playerName = '플레
         </div>
       </div>
 
-      {/* 우: 아이콘 버튼들 */}
+      {/* 우: 버튼 */}
       <div className="flex items-center gap-1">
         <IconBtn icon="✉️" label="우편" badge={3} onClick={() => onOpenPopup('mail')} />
         <IconBtn icon="⚙️" label="설정" onClick={() => onOpenPopup('settings')} />
@@ -75,10 +92,10 @@ function IconBtn({ icon, label, badge, onClick }) {
     >
       <span className="text-lg">{icon}</span>
       {badge > 0 && (
-        <span
-          className="absolute -top-1 -right-1 w-4 h-4 rounded-full text-xs font-bold flex items-center justify-center"
-          style={{ background: '#ef4444', color: '#fff', fontSize: '10px' }}
-        >{badge}</span>
+        <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full text-xs font-bold flex items-center justify-center"
+          style={{ background: '#ef4444', color: '#fff', fontSize: '10px' }}>
+          {badge}
+        </span>
       )}
     </button>
   )
